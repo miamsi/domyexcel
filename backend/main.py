@@ -25,7 +25,6 @@ con = duckdb.connect(database=':memory:')
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        # Read uploaded bytes into memory safely
         contents = await file.read()
         buffer = io.BytesIO(contents)
 
@@ -46,8 +45,9 @@ async def upload_file(file: UploadFile = File(...)):
     except Exception as e:
         return {"error": f"Failed to process file: {str(e)}"}
 
+# Changed to standard 'def' so the blocking Groq client doesn't freeze the server
 @app.post("/query")
-async def query_data(prompt: str = Form(...)):
+def query_data(prompt: str = Form(...)):
     try:
         # Get schema to help Groq understand the data structure
         schema_query = "DESCRIBE uploaded_data;"
@@ -58,9 +58,12 @@ async def query_data(prompt: str = Form(...)):
 
     system_prompt = f"You are a strict SQL generator for DuckDB. The table name is 'uploaded_data'. Do not include markdown formatting or explanations. Here is the schema:\n{schema_str}"
     
+    # Initialize the variable beforehand to prevent scope errors if Groq crashes
+    generated_sql = ""
+    
     try:
         completion = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama-3.3-70b-versatile", # Updated to the active, supported model
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
@@ -74,4 +77,4 @@ async def query_data(prompt: str = Form(...)):
         result_df = con.execute(generated_sql).df()
         return {"sql": generated_sql, "result": result_df.to_dict(orient="records")}
     except Exception as e:
-        return {"error": f"Execution error: {str(e)}", "sql": generated_sql if 'generated_sql' in locals() else ""}
+        return {"error": f"Execution error: {str(e)}", "sql": generated_sql}
