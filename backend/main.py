@@ -5,7 +5,6 @@ import duckdb
 import pandas as pd
 from groq import Groq
 import os
-import io
 
 app = FastAPI()
 
@@ -25,13 +24,12 @@ con = duckdb.connect(database=':memory:')
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        contents = await file.read()
-        buffer = io.BytesIO(contents)
-
+        # Reverted back to the original memory-safe method. 
+        # This prevents the 502 Bad Gateway Out-Of-Memory (OOM) crash on large files.
         if file.filename.endswith('.csv'):
-            df = pd.read_csv(buffer)
+            df = pd.read_csv(file.file)
         elif file.filename.endswith('.xlsx'):
-            df = pd.read_excel(buffer)
+            df = pd.read_excel(file.file)
         else:
             return {"error": "Unsupported file format. Please upload .csv or .xlsx"}
 
@@ -45,7 +43,6 @@ async def upload_file(file: UploadFile = File(...)):
     except Exception as e:
         return {"error": f"Failed to process file: {str(e)}"}
 
-# Changed to standard 'def' so the blocking Groq client doesn't freeze the server
 @app.post("/query")
 def query_data(prompt: str = Form(...)):
     try:
@@ -58,12 +55,11 @@ def query_data(prompt: str = Form(...)):
 
     system_prompt = f"You are a strict SQL generator for DuckDB. The table name is 'uploaded_data'. Do not include markdown formatting or explanations. Here is the schema:\n{schema_str}"
     
-    # Initialize the variable beforehand to prevent scope errors if Groq crashes
     generated_sql = ""
     
     try:
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile", # Updated to the active, supported model
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
