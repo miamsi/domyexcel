@@ -5,11 +5,10 @@ import duckdb
 import pandas as pd
 from groq import Groq
 import os
+import io
 
 app = FastAPI()
 
-# Allow frontend to communicate with backend
-# allow_credentials must be False when allow_origins is ["*"] for browser security policies
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -26,10 +25,14 @@ con = duckdb.connect(database=':memory:')
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
+        # Read uploaded bytes into memory safely
+        contents = await file.read()
+        buffer = io.BytesIO(contents)
+
         if file.filename.endswith('.csv'):
-            df = pd.read_csv(file.file)
+            df = pd.read_csv(buffer)
         elif file.filename.endswith('.xlsx'):
-            df = pd.read_excel(file.file)
+            df = pd.read_excel(buffer)
         else:
             return {"error": "Unsupported file format. Please upload .csv or .xlsx"}
 
